@@ -5,7 +5,7 @@
 # Two passes, so new repos and existing ones are handled together:
 #
 #   1. clone  — ask GitHub which org repos you can see, clone the missing ones
-#               as siblings of this index clone
+#               as siblings of this index clone (demos only on request, below)
 #   2. update — for every repo already on disk, fetch origin and rebase onto it
 #               (equivalent to: git fetch origin && git pull --rebase)
 #
@@ -17,6 +17,13 @@
 #   ./fetch-clones.sh               # clone into / update the parent of this repo
 #   ./fetch-clones.sh ~/somewhere   # use an explicit target directory
 #   ./fetch-clones.sh --autostash   # stash local edits, rebase, reapply them
+#   ./fetch-clones.sh --demos       # also clone every missing demo
+#   ./fetch-clones.sh --demo=tasb-workspace   # also clone that one demo
+#
+# A demo is a customer demo workspace: a repo named *-workspace that does not
+# start with liferay- (tasb-workspace, not liferay-workspace-ai). Demos usually
+# live in their own folder elsewhere, so the clone pass skips them unless asked.
+# The update pass still updates any demo already cloned in the target.
 #
 # Repos are never left mid-rebase: a rebase that hits conflicts is aborted and
 # reported, for you to redo by hand.
@@ -28,11 +35,15 @@ set -euo pipefail
 ORG="liferay-se"
 
 AUTOSTASH=""
+ALL_DEMOS=""
+DEMOS=" "
 TARGET=""
 
 for arg in "$@"; do
 	case "${arg}" in
 		--autostash) AUTOSTASH="--autostash" ;;
+		--demos) ALL_DEMOS=1 ;;
+		--demo=*) DEMOS="${DEMOS}${arg#--demo=} " ;;
 		-*) echo "error: unknown option ${arg}" >&2; exit 2 ;;
 		*) TARGET="${arg}" ;;
 	esac
@@ -53,6 +64,22 @@ CLONED=" "
 note_attention() {
 	ATTENTION="${ATTENTION}  ${1}
 "
+}
+
+is_demo() {
+	case "${1}" in
+		liferay-*) return 1 ;;
+		*-workspace) return 0 ;;
+	esac
+	return 1
+}
+
+wants_demo() {
+	[ -n "${ALL_DEMOS}" ] && return 0
+	case "${DEMOS}" in
+		*" ${1} "*) return 0 ;;
+	esac
+	return 1
 }
 
 # ---------------------------------------------------------------- clone pass
@@ -80,6 +107,11 @@ else
 		esac
 
 		if [ -d "${TARGET}/${name}/.git" ]; then
+			continue
+		fi
+
+		if is_demo "${name}" && ! wants_demo "${name}"; then
+			echo "skip   ${name} (demo — clone with --demo=${name})"
 			continue
 		fi
 
